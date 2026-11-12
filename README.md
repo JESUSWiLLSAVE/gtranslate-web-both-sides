@@ -1,5 +1,7 @@
 # Google Translate — Type in Both Sides (Firefox extension)
 
+Licensed under the [MIT License](LICENSE).
+
 Makes the result field on [translate.google.com](https://translate.google.com) editable so you can type into **both** fields and the translation keeps updating.
 
 ## How it works
