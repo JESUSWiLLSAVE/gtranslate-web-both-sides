@@ -5,7 +5,7 @@ Makes the result field on [translate.google.com](https://translate.google.com) e
 ## How it works
 
 - **Left (source) field** — already editable; works exactly as Google built it.
-- **Right (result) field** — the extension makes it contenteditable. When you type there:
+- **Right (result) field** — the extension makes it content editable. When you type there:
   - it waits ~700 ms after you stop typing (or press <kbd>Enter</kbd>),
   - sends your edited text to Google's `translate_a/single` endpoint to translate it back into the source language,
   - writes the back-translation into the left field **silently** — the selected languages never swap sides.
