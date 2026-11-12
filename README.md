@@ -6,13 +6,10 @@ A Violentmonkey/Tampermonkey userscript that makes the result field on [translat
 
 - **Left (source) field** - already editable; works exactly as Google built it.
 - **Right (result) field** - the script hides Google's result node and puts its own editable overlay in its place, so Google's re-renders can never clobber what you type. When you type there:
-  - it waits ~700 ms after you stop typing (or press <kbd>Enter</kbd>),
+  - It waits ~700 ms after you stop typing (or press <kbd>Enter</kbd>),
   - sends your edited text to Google's `translate_a/single` endpoint to translate it back into the source language,
-  - writes the back-translation into the left field **silently** - the selected languages never swap sides.
-
-So the loop is: type English → see French → edit the French → see the updated English, all while the language selectors stay exactly where they are.
-
-If the language codes can't be determined (e.g. no `sl`/`tl` in the URL and detection fails), it falls back to clicking Google's "Swap languages" button.
+  - writes the back-translation into the left field **silently** - the selected languages never swap sides,
+  - if the language codes can't be determined (e.g. no `sl`/`tl` in the URL and detection fails), it falls back to clicking Google's "Swap languages" button.
 
 ## Install
 
