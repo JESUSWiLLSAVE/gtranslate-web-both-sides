@@ -5,7 +5,7 @@ A Violentmonkey/Tampermonkey userscript that makes the result field on [translat
 ## How it works
 
 - **Left (source) field** - already editable; works exactly as Google built it.
-- **Right (result) field** - the script makes it contenteditable. When you type there:
+- **Right (result) field** - the script hides Google's result node and puts its own editable overlay in its place, so Google's re-renders can never clobber what you type. When you type there:
   - it waits ~700 ms after you stop typing (or press <kbd>Enter</kbd>),
   - sends your edited text to Google's `translate_a/single` endpoint to translate it back into the source language,
   - writes the back-translation into the left field **silently** - the selected languages never swap sides.
@@ -30,6 +30,6 @@ If the language codes can't be determined (e.g. no `sl`/`tl` in the URL and dete
 ## Notes & limits
 
 - Google changes the page's obfuscated CSS class names from time to time. The script tries several selectors (aria-labels first, class-name hooks as fallback). If editing ever stops working after a Google redesign, update `SOURCE_SELECTORS` / `RESULT_SELECTORS` / `SWAP_SELECTORS` at the top of the script.
-- While you are actively editing the result field, the script protects your text: if Google re-renders the result (its cached translation) over your edit, the script restores what you typed. Finish typing and the back-translation updates the left field as usual.
+- If Google rebuilds the result area from scratch, the script rebuilds its overlay too - preserving what you were typing if you edited it within the last few seconds.
 - The back-translation uses Google's public `translate_a/single` endpoint; no keys, no other network access, nothing stored.
 - The old Firefox WebExtension version was removed in the pivot to a userscript; if you ever want it back, it's in the git history (commits before `8220bad`).
