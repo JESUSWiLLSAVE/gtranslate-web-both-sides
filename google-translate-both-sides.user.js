@@ -1,12 +1,23 @@
-/**
- * Google Translate — Type in Both Sides
- *
- * Makes the translation-result field on translate.google.com editable.
+// ==UserScript==
+// @name         Google Translate — Type in Both Sides
+// @namespace    https://github.com/JESUSWiLLSAVE
+// @version      2.0.0
+// @description  Type into both fields on translate.google.com. Edits on the result side are translated back into the source language without swapping the selected languages.
+// @author       JESUSWiLLSAVE
+// @match        https://translate.google.com/*
+// @grant        GM.xmlHttpRequest
+// @connect      translate.googleapis.com
+// @run-at       document-idle
+// @license      MIT
+// ==/UserScript==
+
+/*
+ * Makes the translation-result field editable.
  * - Left (source) field: already editable, works normally.
  * - Right (result) field: made contenteditable. When you edit it, the
- *   extension translates your edited text back into the source language
- *   via Google's translate endpoint and updates the left field — the
- *   selected languages never swap sides.
+ *   script translates your edited text back into the source language via
+ *   Google's translate endpoint and updates the left field — the selected
+ *   languages never swap sides.
  */
 (() => {
   "use strict";
@@ -177,27 +188,60 @@
     return { sl: params.get("sl"), tl: params.get("tl") };
   };
 
-  const gtxTranslate = async (text, sl, tl) => {
-    const url =
-      `${GTX_ENDPOINT}?client=gtx&dt=t` +
-      `&sl=${encodeURIComponent(sl)}&tl=${encodeURIComponent(tl)}` +
-      `&q=${encodeURIComponent(text)}`;
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`gtx ${response.status}`);
-    const data = await response.json();
+  const gtxUrl = (text, sl, tl) =>
+    `${GTX_ENDPOINT}?client=gtx&dt=t` +
+    `&sl=${encodeURIComponent(sl)}&tl=${encodeURIComponent(tl)}` +
+    `&q=${encodeURIComponent(text)}`;
+
+  const parseGtx = (data) => {
     if (!Array.isArray(data) || !Array.isArray(data[0])) {
       throw new Error("unexpected gtx payload");
     }
     const parts = data[0]
       .filter(Array.isArray)
-      .map((segment) =>
-        typeof segment[0] === "string" ? segment[0] : ""
-      )
+      .map((segment) => (typeof segment[0] === "string" ? segment[0] : ""))
       .filter((part) => part.length > 0);
     return {
       text: parts.join(""),
       detected: typeof data[2] === "string" ? data[2] : null,
     };
+  };
+
+  const gmxhrJson = (url) =>
+    new Promise((resolve, reject) => {
+      if (typeof GM === "undefined" || !GM.xmlHttpRequest) {
+        reject(new Error("GM.xmlHttpRequest unavailable"));
+        return;
+      }
+      GM.xmlHttpRequest({
+        method: "GET",
+        url,
+        onload: (response) => {
+          if (response.status >= 200 && response.status < 300) {
+            try {
+              resolve(JSON.parse(response.responseText));
+            } catch (error) {
+              reject(error);
+            }
+          } else {
+            reject(new Error(`gtx ${response.status}`));
+          }
+        },
+        onerror: () => reject(new Error("gtx network error")),
+      });
+    });
+
+  const gtxTranslate = async (text, sl, tl) => {
+    const url = gtxUrl(text, sl, tl);
+    let data;
+    try {
+      data = await gmxhrJson(url);
+    } catch (error) {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`gtx ${response.status}`);
+      data = await response.json();
+    }
+    return parseGtx(data);
   };
 
   const swapAndTranslate = async (edited, source) => {
