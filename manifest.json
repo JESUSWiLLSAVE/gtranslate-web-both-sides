@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Google Translate — Type in Both Sides",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Makes the result field on translate.google.com editable: type into either side and the translation keeps updating (edits on the result side are translated back).",
   "browser_specific_settings": {
     "gecko": {
@@ -19,5 +19,8 @@
       "run_at": "document_idle"
     }
   ],
-  "permissions": []
+  "permissions": [],
+  "host_permissions": [
+    "*://translate.googleapis.com/*"
+  ]
 }

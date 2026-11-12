@@ -4,8 +4,9 @@
  * Makes the translation-result field on translate.google.com editable.
  * - Left (source) field: already editable, works normally.
  * - Right (result) field: made contenteditable. When you edit it, the
- *   extension swaps the language direction and translates your edited
- *   text back, so both sides keep updating.
+ *   extension translates your edited text back into the source language
+ *   via Google's translate endpoint and updates the left field — the
+ *   selected languages never swap sides.
  */
 (() => {
   "use strict";
@@ -33,6 +34,8 @@
     'button[aria-label*="Swap"]',
     'button[jsname="jl3qub"]',
   ];
+
+  const GTX_ENDPOINT = "https://translate.googleapis.com/translate_a/single";
 
   let resultTarget = null;
   let lastTranslation = "";
@@ -138,7 +141,7 @@
     }
   };
 
-  const setSourceValue = (textarea, value) => {
+  const setSourceValue = (textarea, value, silent = false) => {
     const descriptor = Object.getOwnPropertyDescriptor(
       HTMLTextAreaElement.prototype,
       "value"
@@ -148,6 +151,7 @@
     } else {
       textarea.value = value;
     }
+    if (silent) return;
     textarea.dispatchEvent(new Event("input", { bubbles: true }));
     textarea.dispatchEvent(new Event("change", { bubbles: true }));
   };
@@ -166,6 +170,45 @@
       }, SWAP_POLL_INTERVAL_MS);
     });
 
+  const getUrlLangs = () => {
+    const params = new URLSearchParams(window.location.search);
+    return { sl: params.get("sl"), tl: params.get("tl") };
+  };
+
+  const gtxTranslate = async (text, sl, tl) => {
+    const url =
+      `${GTX_ENDPOINT}?client=gtx&dt=t` +
+      `&sl=${encodeURIComponent(sl)}&tl=${encodeURIComponent(tl)}` +
+      `&q=${encodeURIComponent(text)}`;
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`gtx ${response.status}`);
+    const data = await response.json();
+    if (!Array.isArray(data) || !Array.isArray(data[0])) {
+      throw new Error("unexpected gtx payload");
+    }
+    return {
+      text: data[0]
+        .map((segment) => (Array.isArray(segment) ? segment[0] || "" : ""))
+        .join(""),
+      detected: typeof data[2] === "string" ? data[2] : null,
+    };
+  };
+
+  const swapAndTranslate = async (edited, source) => {
+    const previousTranslation = lastTranslation;
+    const swap = findSwapButton();
+    if (swap && previousTranslation) {
+      swap.click();
+      await poll(
+        () =>
+          source.value.trim() === previousTranslation ||
+          source.value.trim() === "",
+        SWAP_SETTLE_TIMEOUT_MS
+      );
+    }
+    setSourceValue(source, edited);
+  };
+
   const reverseTranslate = async () => {
     if (!resultTarget || reversing) return;
 
@@ -173,23 +216,29 @@
     const source = findSource();
     if (!source) return;
 
-    const previousTranslation = lastTranslation;
-
-    if (edited === previousTranslation) return;
+    if (edited === lastTranslation) return;
     reversing = true;
 
     try {
-      const swap = findSwapButton();
-      if (swap && previousTranslation) {
-        swap.click();
-        const settled = await poll(
-          () =>
-            source.value.trim() === previousTranslation ||
-            source.value.trim() === "",
-          SWAP_SETTLE_TIMEOUT_MS
-        );
-        if (!settled && source.value.trim() === previousTranslation) return;
+      const { sl, tl } = getUrlLangs();
+      if (tl) {
+        let sourceLang = sl && sl !== "auto" ? sl : null;
+        if (!sourceLang && source.value.trim()) {
+          try {
+            const probe = await gtxTranslate(source.value.trim(), "auto", "en");
+            sourceLang = probe.detected;
+          } catch (error) {
+            sourceLang = null;
+          }
+        }
+        if (sourceLang) {
+          const back = await gtxTranslate(edited, tl, sourceLang);
+          setSourceValue(source, back, true);
+          return;
+        }
       }
+      await swapAndTranslate(edited, source);
+    } catch (error) {
       setSourceValue(source, edited);
     } finally {
       reversing = false;
