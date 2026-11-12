@@ -39,6 +39,6 @@ Tampermonkey will ask for permission to access `translate.googleapis.com` — th
 ## Notes & limits
 
 - Google changes the page's obfuscated CSS class names from time to time. The script tries several selectors (aria-labels first, class-name hooks as fallback). If editing ever stops working after a Google redesign, update `SOURCE_SELECTORS` / `RESULT_SELECTORS` / `SWAP_SELECTORS` at the top of the script.
-- While you are actively typing in the result field, a translation arriving from an earlier source edit can replace your text — that is Google re-rendering the node. Pause typing for a moment and edit again.
+- While you are actively editing the result field, the script protects your text: if Google re-renders the result (its cached translation) over your edit, the script restores what you typed. Finish typing and the back-translation updates the left field as usual.
 - The back-translation uses Google's public `translate_a/single` endpoint; no keys, no other network access, nothing stored.
 - The old Firefox WebExtension version was removed in the pivot to a userscript; if you ever want it back, it's in the git history (commits before `8220bad`).

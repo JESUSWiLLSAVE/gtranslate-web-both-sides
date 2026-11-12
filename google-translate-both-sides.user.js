@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Google Translate — Type in Both Sides
 // @namespace    https://github.com/JESUSWiLLSAVE
-// @version      2.0.0
+// @version      2.1.0
 // @description  Type into both fields on translate.google.com. Edits on the result side are translated back into the source language without swapping the selected languages.
 // @author       JESUSWiLLSAVE
 // @match        https://translate.google.com/*
@@ -50,8 +50,33 @@
 
   let resultTarget = null;
   let lastTranslation = "";
+  let lastUserText = null;
   let reverseTimer = null;
   let reversing = false;
+  let pristineValueSetter;
+
+  const getPristineValueSetter = () => {
+    if (pristineValueSetter !== undefined) return pristineValueSetter;
+    try {
+      const iframe = document.createElement("iframe");
+      iframe.style.display = "none";
+      document.documentElement.appendChild(iframe);
+      pristineValueSetter =
+        Object.getOwnPropertyDescriptor(
+          iframe.contentWindow.HTMLTextAreaElement.prototype,
+          "value"
+        )?.set || null;
+      iframe.remove();
+    } catch (error) {
+      pristineValueSetter = null;
+    }
+    if (!pristineValueSetter) {
+      pristineValueSetter =
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")
+          ?.set || null;
+    }
+    return pristineValueSetter;
+  };
 
   const injectStyle = () => {
     if (document.getElementById("gtbs-style")) return;
@@ -108,6 +133,23 @@
     return null;
   };
 
+  const placeCaretEnd = (el) => {
+    const selection = window.getSelection();
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    range.collapse(false);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  };
+
+  const restoreUserText = (target) => {
+    if (lastUserText === null) return;
+    if ((target.textContent || "").trim() === lastUserText) return;
+    target.textContent = lastUserText;
+    if (document.activeElement === target) placeCaretEnd(target);
+    lastTranslation = lastUserText;
+  };
+
   const attachResultEditing = () => {
     const target = findResultTarget();
     if (!target) return;
@@ -125,8 +167,11 @@
     }
 
     const text = (target.textContent || "").trim();
-    if (text && !userIsEditingResult()) {
+    if (userIsEditingResult()) {
+      restoreUserText(target);
+    } else if (text) {
       lastTranslation = text;
+      lastUserText = null;
     }
   };
 
@@ -142,6 +187,7 @@
     if (reversing) return;
     if (!event.isTrusted) return;
     if (!userIsEditingResult()) return;
+    lastUserText = (resultTarget.textContent || "").trim();
     window.clearTimeout(reverseTimer);
     reverseTimer = window.setTimeout(reverseTranslate, REVERSE_DEBOUNCE_MS);
   };
@@ -155,12 +201,9 @@
   };
 
   const setSourceValue = (textarea, value, silent = false) => {
-    const descriptor = Object.getOwnPropertyDescriptor(
-      HTMLTextAreaElement.prototype,
-      "value"
-    );
-    if (descriptor && descriptor.set) {
-      descriptor.set.call(textarea, value);
+    const setter = getPristineValueSetter();
+    if (setter) {
+      setter.call(textarea, value);
     } else {
       textarea.value = value;
     }
