@@ -1,14 +1,14 @@
-# Google Translate — Type in Both Sides (userscript)
+# Google Translate - Type in Both Sides (userscript)
 
-A Tampermonkey/Violentmonkey userscript that makes the result field on [translate.google.com](https://translate.google.com) editable, so you can type into **both** fields and the translation keeps updating.
+A Violentmonkey/Tampermonkey userscript that makes the result field on [translate.google.com](https://translate.google.com) editable, so you can type into **both** fields and the translation keeps updating.
 
 ## How it works
 
-- **Left (source) field** — already editable; works exactly as Google built it.
-- **Right (result) field** — the script makes it contenteditable. When you type there:
+- **Left (source) field** - already editable; works exactly as Google built it.
+- **Right (result) field** - the script makes it contenteditable. When you type there:
   - it waits ~700 ms after you stop typing (or press <kbd>Enter</kbd>),
   - sends your edited text to Google's `translate_a/single` endpoint to translate it back into the source language,
-  - writes the back-translation into the left field **silently** — the selected languages never swap sides.
+  - writes the back-translation into the left field **silently** - the selected languages never swap sides.
 
 So the loop is: type English → see French → edit the French → see the updated English, all while the language selectors stay exactly where they are.
 
@@ -17,23 +17,23 @@ If the language codes can't be determined (e.g. no `sl`/`tl` in the URL and dete
 ## Install
 
 1. Install a userscript manager if you don't have one:
-   - [Tampermonkey](https://www.tampermonkey.net/) (recommended)
-   - [Violentmonkey](https://violentmonkey.github.io/)
+   - [Violentmonkey](https://violentmonkey.github.io/) (recommended)
+   - [Tampermonkey](https://www.tampermonkey.net/)
    - [Greasemonkey](https://www.greasespot.net/)
-2. Install the script, either:
+3. Install the script, either:
    - **From the repo:** open the raw file at
      `https://raw.githubusercontent.com/JESUSWiLLSAVE/gtranslate-web-both-sides/main/google-translate-both-sides.user.js`
-     — your userscript manager will offer to install it, or
+     - your userscript manager will offer to install it, or
    - **Manually:** open the manager's dashboard → create new script → paste the contents of `google-translate-both-sides.user.js` → save.
-3. Open [translate.google.com](https://translate.google.com) and use it.
+4. Open or reload [translate.google.com](https://translate.google.com).
 
-Tampermonkey will ask for permission to access `translate.googleapis.com` — that's the script's only network use (the back-translation call).
+Tampermonkey will ask for permission to access `translate.googleapis.com` - that's the script's only network use (the back-translation call).
 
 ## Files
 
 | File | Purpose |
 | --- | --- |
-| `google-translate-both-sides.user.js` | The userscript — everything lives in this one file |
+| `google-translate-both-sides.user.js` | The userscript - everything lives in this one file |
 | `LICENSE` | MIT |
 
 ## Notes & limits
