@@ -1,4 +1,4 @@
-# Google Translate — Type in Both Sides (Firefox extension)
+# Google Translate - Type in Both Sides (Firefox extension)
 
 Makes the result field on [translate.google.com](https://translate.google.com) editable so you can type into **both** fields and the translation keeps updating.
 
