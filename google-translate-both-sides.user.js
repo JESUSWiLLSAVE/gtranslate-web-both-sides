@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Google Translate — Type in Both Sides
 // @namespace    https://github.com/JESUSWiLLSAVE
-// @version      2.1.0
+// @version      2.2.0
 // @description  Type into both fields on translate.google.com. Edits on the result side are translated back into the source language without swapping the selected languages.
 // @author       JESUSWiLLSAVE
 // @match        https://translate.google.com/*
@@ -14,10 +14,12 @@
 /*
  * Makes the translation-result field editable.
  * - Left (source) field: already editable, works normally.
- * - Right (result) field: made contenteditable. When you edit it, the
- *   script translates your edited text back into the source language via
- *   Google's translate endpoint and updates the left field — the selected
- *   languages never swap sides.
+ * - Right (result) field: Google's result node is hidden and replaced by our
+ *   own contenteditable overlay. Edits on the overlay are translated back
+ *   into the source language via Google's translate endpoint and written
+ *   silently into the left field. Google's re-renders land on its hidden
+ *   node, so they can never clobber user input; genuinely new translations
+ *   are detected on the hidden node and copied into the overlay.
  */
 (() => {
   "use strict";
@@ -25,6 +27,7 @@
   const REVERSE_DEBOUNCE_MS = 700;
   const SWAP_SETTLE_TIMEOUT_MS = 2500;
   const SWAP_POLL_INTERVAL_MS = 60;
+  const USER_EDIT_WINDOW_MS = 5000;
 
   const SOURCE_SELECTORS = [
     'textarea[aria-label="Source text"]',
@@ -48,9 +51,12 @@
 
   const GTX_ENDPOINT = "https://translate.googleapis.com/translate_a/single";
 
-  let resultTarget = null;
+  let overlay = null;
+  let hiddenLeaf = null;
   let lastTranslation = "";
+  let lastSeenGoogleText = "";
   let lastUserText = null;
+  let lastUserEditAt = 0;
   let reverseTimer = null;
   let reversing = false;
   let pristineValueSetter;
@@ -104,6 +110,17 @@
     return null;
   };
 
+  const attachSourceGuard = () => {
+    const source = findSource();
+    if (!source || source.dataset.gtbsGuard === "true") return;
+    source.dataset.gtbsGuard = "true";
+    source.addEventListener("input", (event) => {
+      if (!event.isTrusted) return;
+      lastUserText = null;
+      lastUserEditAt = 0;
+    });
+  };
+
   const findSwapButton = () => {
     for (const sel of SWAP_SELECTORS) {
       const el = document.querySelector(sel);
@@ -112,6 +129,10 @@
     return null;
   };
 
+  const isOurNode = (el) =>
+    (overlay !== null && (el === overlay || overlay.contains(el))) ||
+    (hiddenLeaf !== null && (el === hiddenLeaf || hiddenLeaf.contains(el)));
+
   const isEditableTextLeaf = (el) => {
     if (!(el instanceof HTMLElement)) return false;
     const text = (el.textContent || "").trim();
@@ -119,13 +140,14 @@
     return el.children.length === 0 || el.tagName === "SPAN";
   };
 
-  const findResultTarget = () => {
+  const findVisibleLeaf = () => {
     for (const sel of RESULT_SELECTORS) {
       const el = document.querySelector(sel);
-      if (!el || el.offsetParent === null) continue;
+      if (!el || el.offsetParent === null || isOurNode(el)) continue;
       if (isEditableTextLeaf(el)) return el;
       const leaves = Array.from(el.querySelectorAll("span, div")).filter(
-        (n) => n.offsetParent !== null && isEditableTextLeaf(n)
+        (n) =>
+          n.offsetParent !== null && !isOurNode(n) && isEditableTextLeaf(n)
       );
       if (leaves.length > 0) return leaves[leaves.length - 1];
       return el;
@@ -133,61 +155,24 @@
     return null;
   };
 
-  const placeCaretEnd = (el) => {
-    const selection = window.getSelection();
-    const range = document.createRange();
-    range.selectNodeContents(el);
-    range.collapse(false);
-    selection.removeAllRanges();
-    selection.addRange(range);
-  };
-
-  const restoreUserText = (target) => {
-    if (lastUserText === null) return;
-    if ((target.textContent || "").trim() === lastUserText) return;
-    target.textContent = lastUserText;
-    if (document.activeElement === target) placeCaretEnd(target);
-    lastTranslation = lastUserText;
-  };
-
-  const attachResultEditing = () => {
-    const target = findResultTarget();
-    if (!target) return;
-
-    if (target !== resultTarget) {
-      resultTarget = target;
-      target.contentEditable = "true";
-      target.setAttribute("data-gtbs-editable", "true");
-      target.spellcheck = false;
-      target.addEventListener("input", onResultInput);
-      target.addEventListener("keydown", onResultKeydown);
-    } else if (target.contentEditable !== "true") {
-      target.contentEditable = "true";
-      target.setAttribute("data-gtbs-editable", "true");
-    }
-
-    const text = (target.textContent || "").trim();
-    if (userIsEditingResult()) {
-      restoreUserText(target);
-    } else if (text) {
-      lastTranslation = text;
-      lastUserText = null;
-    }
-  };
-
   const userIsEditingResult = () => {
     return (
-      resultTarget !== null &&
-      (document.activeElement === resultTarget ||
-        resultTarget.contains(document.activeElement))
+      overlay !== null &&
+      overlay.isConnected &&
+      (document.activeElement === overlay ||
+        overlay.contains(document.activeElement))
     );
   };
+
+  const recentUserEdit = () =>
+    lastUserText !== null && Date.now() - lastUserEditAt < USER_EDIT_WINDOW_MS;
 
   const onResultInput = (event) => {
     if (reversing) return;
     if (!event.isTrusted) return;
     if (!userIsEditingResult()) return;
-    lastUserText = (resultTarget.textContent || "").trim();
+    lastUserText = (overlay.textContent || "").trim();
+    lastUserEditAt = Date.now();
     window.clearTimeout(reverseTimer);
     reverseTimer = window.setTimeout(reverseTranslate, REVERSE_DEBOUNCE_MS);
   };
@@ -303,9 +288,9 @@
   };
 
   const reverseTranslate = async () => {
-    if (!resultTarget || reversing) return;
+    if (!overlay || !overlay.isConnected || reversing) return;
 
-    const edited = (resultTarget.textContent || "").trim();
+    const edited = (overlay.textContent || "").trim();
     const source = findSource();
     if (!source) return;
 
@@ -316,6 +301,7 @@
       if (edited === "") {
         setSourceValue(source, "", true);
         lastTranslation = "";
+        lastUserEditAt = Date.now();
         return;
       }
       const { sl, tl } = getUrlLangs();
@@ -336,6 +322,7 @@
           }
           setSourceValue(source, back.text, true);
           lastTranslation = edited;
+          lastUserEditAt = Date.now();
           return;
         }
       }
@@ -347,6 +334,58 @@
     }
   };
 
+  const syncFromGoogle = () => {
+    if (!hiddenLeaf || !hiddenLeaf.isConnected) return;
+    const googleText = (hiddenLeaf.textContent || "").trim();
+    if (googleText === lastSeenGoogleText) return;
+    lastSeenGoogleText = googleText;
+    if (userIsEditingResult() || recentUserEdit()) return;
+    overlay.textContent = hiddenLeaf.textContent;
+    lastTranslation = googleText;
+    lastUserText = null;
+  };
+
+  const hideAndAttach = (leaf) => {
+    const container = leaf.parentElement;
+    if (!container) return;
+
+    if (!overlay || !overlay.isConnected) {
+      overlay = document.createElement("div");
+      overlay.contentEditable = "true";
+      overlay.setAttribute("data-gtbs-editable", "true");
+      overlay.spellcheck = false;
+      overlay.style.whiteSpace = "pre-wrap";
+      overlay.style.minHeight = "1em";
+      overlay.addEventListener("input", onResultInput);
+      overlay.addEventListener("keydown", onResultKeydown);
+    }
+
+    leaf.style.display = "none";
+    hiddenLeaf = leaf;
+    container.insertBefore(overlay, leaf);
+
+    const googleText = (leaf.textContent || "").trim();
+    lastSeenGoogleText = googleText;
+    if (recentUserEdit() && lastUserText !== null) {
+      overlay.textContent = lastUserText;
+      lastTranslation = lastUserText;
+    } else {
+      overlay.textContent = leaf.textContent;
+      lastTranslation = googleText;
+      lastUserText = null;
+    }
+  };
+
+  const ensureOverlay = () => {
+    if (overlay && overlay.isConnected && hiddenLeaf && hiddenLeaf.isConnected) {
+      syncFromGoogle();
+      return;
+    }
+    const leaf = findVisibleLeaf();
+    if (!leaf) return;
+    hideAndAttach(leaf);
+  };
+
   let rescanScheduled = false;
   const scheduleRescan = () => {
     if (rescanScheduled) return;
@@ -354,12 +393,14 @@
     window.setTimeout(() => {
       rescanScheduled = false;
       injectStyle();
-      attachResultEditing();
+      attachSourceGuard();
+      ensureOverlay();
     }, 150);
   };
 
   injectStyle();
-  attachResultEditing();
+  attachSourceGuard();
+  ensureOverlay();
 
   const observer = new MutationObserver((mutations) => {
     for (const mutation of mutations) {
