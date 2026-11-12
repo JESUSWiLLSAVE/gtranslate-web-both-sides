@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         Google Translate — Type in Both Sides
+// @name         Google Translate - Type in Both Sides
 // @namespace    https://github.com/JESUSWiLLSAVE
 // @version      2.3.0
 // @description  Type into both fields on translate.google.com. Edits on the result side are translated back into the source language without swapping the selected languages.
