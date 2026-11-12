@@ -127,8 +127,10 @@
     );
   };
 
-  const onResultInput = () => {
+  const onResultInput = (event) => {
     if (reversing) return;
+    if (!event.isTrusted) return;
+    if (!userIsEditingResult()) return;
     window.clearTimeout(reverseTimer);
     reverseTimer = window.setTimeout(reverseTranslate, REVERSE_DEBOUNCE_MS);
   };
@@ -186,10 +188,14 @@
     if (!Array.isArray(data) || !Array.isArray(data[0])) {
       throw new Error("unexpected gtx payload");
     }
+    const parts = data[0]
+      .filter(Array.isArray)
+      .map((segment) =>
+        typeof segment[0] === "string" ? segment[0] : ""
+      )
+      .filter((part) => part.length > 0);
     return {
-      text: data[0]
-        .map((segment) => (Array.isArray(segment) ? segment[0] || "" : ""))
-        .join(""),
+      text: parts.join(""),
       detected: typeof data[2] === "string" ? data[2] : null,
     };
   };
@@ -220,6 +226,11 @@
     reversing = true;
 
     try {
+      if (edited === "") {
+        setSourceValue(source, "", true);
+        lastTranslation = "";
+        return;
+      }
       const { sl, tl } = getUrlLangs();
       if (tl) {
         let sourceLang = sl && sl !== "auto" ? sl : null;
@@ -233,7 +244,11 @@
         }
         if (sourceLang) {
           const back = await gtxTranslate(edited, tl, sourceLang);
-          setSourceValue(source, back, true);
+          if (typeof back.text !== "string" || !back.text.trim()) {
+            throw new Error("empty back-translation");
+          }
+          setSourceValue(source, back.text, true);
+          lastTranslation = edited;
           return;
         }
       }
