@@ -27,15 +27,6 @@ If the language codes can't be determined (e.g. no `sl`/`tl` in the URL and dete
    - **Manually:** open the manager's dashboard → create new script → paste the contents of `google-translate-both-sides.user.js` → save.
 4. Open or reload [translate.google.com](https://translate.google.com).
 
-Tampermonkey will ask for permission to access `translate.googleapis.com` - that's the script's only network use (the back-translation call).
-
-## Files
-
-| File | Purpose |
-| --- | --- |
-| `google-translate-both-sides.user.js` | The userscript - everything lives in this one file |
-| `LICENSE` | MIT |
-
 ## Notes & limits
 
 - Google changes the page's obfuscated CSS class names from time to time. The script tries several selectors (aria-labels first, class-name hooks as fallback). If editing ever stops working after a Google redesign, update `SOURCE_SELECTORS` / `RESULT_SELECTORS` / `SWAP_SELECTORS` at the top of the script.
