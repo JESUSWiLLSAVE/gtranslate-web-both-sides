@@ -1,7 +1,5 @@
 # Google Translate — Type in Both Sides (Firefox extension)
 
-Licensed under the [MIT License](LICENSE).
-
 Makes the result field on [translate.google.com](https://translate.google.com) editable so you can type into **both** fields and the translation keeps updating.
 
 ## How it works
@@ -11,8 +9,6 @@ Makes the result field on [translate.google.com](https://translate.google.com) e
   - it waits ~700 ms after you stop typing (or press <kbd>Enter</kbd>),
   - sends your edited text to Google's `translate_a/single` endpoint to translate it back into the source language,
   - writes the back-translation into the left field **silently** — the selected languages never swap sides.
-
-So the loop is: type English → see French → edit the French → see the updated English, all while the language selectors stay exactly where they are.
 
 If the language codes can't be determined (e.g. no `sl`/`tl` in the URL and detection fails), it falls back to clicking Google's "Swap languages" button.
 
@@ -26,14 +22,7 @@ The extension stays loaded until Firefox restarts.
 
 ## Install (persistent)
 
-Zip the folder contents (`manifest.json` + `content.js` at the zip root) and sign it via [addons.mozilla.org](https://addons.mozilla.org/developers/) — either submit for listing or use self-distribution signing.
-
-## Files
-
-| File | Purpose |
-| --- | --- |
-| `manifest.json` | Manifest V3 config, content script registered on `translate.google.com` |
-| `content.js` | Makes the result field editable, reverse-translates your edits |
+(Will add Firefox Add-on link here soon)
 
 ## Notes & limits
 
