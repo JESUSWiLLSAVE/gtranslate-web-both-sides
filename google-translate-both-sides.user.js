@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Google Translate — Type in Both Sides
 // @namespace    https://github.com/JESUSWiLLSAVE
-// @version      2.2.0
+// @version      2.3.0
 // @description  Type into both fields on translate.google.com. Edits on the result side are translated back into the source language without swapping the selected languages.
 // @author       JESUSWiLLSAVE
 // @match        https://translate.google.com/*
@@ -15,11 +15,13 @@
  * Makes the translation-result field editable.
  * - Left (source) field: already editable, works normally.
  * - Right (result) field: Google's result node is hidden and replaced by our
- *   own contenteditable overlay. Edits on the overlay are translated back
- *   into the source language via Google's translate endpoint and written
- *   silently into the left field. Google's re-renders land on its hidden
- *   node, so they can never clobber user input; genuinely new translations
- *   are detected on the hidden node and copied into the overlay.
+ *   own contenteditable overlay.
+ *
+ * Authority model:
+ * - After you edit the overlay, YOUR text is authoritative and is never
+ *   overwritten by Google's re-renders — no matter how long ago the edit was.
+ * - Editing the left (source) field hands authority back to Google: the next
+ *   translation it renders is copied into the overlay.
  */
 (() => {
   "use strict";
@@ -27,7 +29,6 @@
   const REVERSE_DEBOUNCE_MS = 700;
   const SWAP_SETTLE_TIMEOUT_MS = 2500;
   const SWAP_POLL_INTERVAL_MS = 60;
-  const USER_EDIT_WINDOW_MS = 5000;
 
   const SOURCE_SELECTORS = [
     'textarea[aria-label="Source text"]',
@@ -35,12 +36,6 @@
     "textarea.EIhZRe",
     "form textarea",
     "textarea",
-  ];
-
-  const RESULT_SELECTORS = [
-    "span.ryNqvb",
-    'div[jsname="W297wb"]',
-    'div[aria-live="polite"]',
   ];
 
   const SWAP_SELECTORS = [
@@ -53,12 +48,13 @@
 
   let overlay = null;
   let hiddenLeaf = null;
+  let mirrorMode = "google";
   let lastTranslation = "";
   let lastSeenGoogleText = "";
   let lastUserText = null;
-  let lastUserEditAt = 0;
   let reverseTimer = null;
   let reversing = false;
+  let pendingReverse = false;
   let pristineValueSetter;
 
   const getPristineValueSetter = () => {
@@ -116,8 +112,8 @@
     source.dataset.gtbsGuard = "true";
     source.addEventListener("input", (event) => {
       if (!event.isTrusted) return;
+      mirrorMode = "google";
       lastUserText = null;
-      lastUserEditAt = 0;
     });
   };
 
@@ -140,17 +136,39 @@
     return el.children.length === 0 || el.tagName === "SPAN";
   };
 
+  const isVisible = (el) => {
+    if (!(el instanceof HTMLElement)) return false;
+    const rect = el.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return false;
+    const style = window.getComputedStyle(el);
+    return style.visibility !== "hidden" && style.display !== "none";
+  };
+
+  const notOurs = (el) =>
+    !isOurNode(el) && !(hiddenLeaf !== null && el === hiddenLeaf);
+
   const findVisibleLeaf = () => {
-    for (const sel of RESULT_SELECTORS) {
-      const el = document.querySelector(sel);
-      if (!el || el.offsetParent === null || isOurNode(el)) continue;
-      if (isEditableTextLeaf(el)) return el;
-      const leaves = Array.from(el.querySelectorAll("span, div")).filter(
+    const primaries = Array.from(document.querySelectorAll("span.ryNqvb")).filter(
+      notOurs
+    );
+    if (primaries.length > 0) {
+      return primaries.find((el) => isVisible(el) && isEditableTextLeaf(el)) || null;
+    }
+    for (const sel of ['div[jsname="W297wb"]', 'div[aria-live="polite"]:not([role="status"])']) {
+      const els = Array.from(document.querySelectorAll(sel)).filter(notOurs);
+      if (els.length === 0) continue;
+      const container = els.find((el) => isVisible(el));
+      if (!container) return null;
+      if (isEditableTextLeaf(container)) return container;
+      const leaves = Array.from(container.querySelectorAll("span, div")).filter(
         (n) =>
-          n.offsetParent !== null && !isOurNode(n) && isEditableTextLeaf(n)
+          notOurs(n) &&
+          isVisible(n) &&
+          isEditableTextLeaf(n) &&
+          !n.closest('[role="status"]')
       );
       if (leaves.length > 0) return leaves[leaves.length - 1];
-      return el;
+      return container;
     }
     return null;
   };
@@ -164,24 +182,18 @@
     );
   };
 
-  const recentUserEdit = () =>
-    lastUserText !== null && Date.now() - lastUserEditAt < USER_EDIT_WINDOW_MS;
-
   const onResultInput = (event) => {
-    if (reversing) return;
     if (!event.isTrusted) return;
     if (!userIsEditingResult()) return;
+    mirrorMode = "user";
     lastUserText = (overlay.textContent || "").trim();
-    lastUserEditAt = Date.now();
-    window.clearTimeout(reverseTimer);
-    reverseTimer = window.setTimeout(reverseTranslate, REVERSE_DEBOUNCE_MS);
+    scheduleReverse();
   };
 
   const onResultKeydown = (event) => {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      window.clearTimeout(reverseTimer);
-      reverseTranslate();
+      fireReverse();
     }
   };
 
@@ -288,7 +300,11 @@
   };
 
   const reverseTranslate = async () => {
-    if (!overlay || !overlay.isConnected || reversing) return;
+    if (!overlay || !overlay.isConnected) return;
+    if (reversing) {
+      pendingReverse = true;
+      return;
+    }
 
     const edited = (overlay.textContent || "").trim();
     const source = findSource();
@@ -301,7 +317,6 @@
       if (edited === "") {
         setSourceValue(source, "", true);
         lastTranslation = "";
-        lastUserEditAt = Date.now();
         return;
       }
       const { sl, tl } = getUrlLangs();
@@ -322,7 +337,6 @@
           }
           setSourceValue(source, back.text, true);
           lastTranslation = edited;
-          lastUserEditAt = Date.now();
           return;
         }
       }
@@ -334,15 +348,59 @@
     }
   };
 
+  const scheduleReverse = () => {
+    window.clearTimeout(reverseTimer);
+    reverseTimer = window.setTimeout(fireReverse, REVERSE_DEBOUNCE_MS);
+  };
+
+  const fireReverse = async () => {
+    await reverseTranslate();
+    if (pendingReverse && !reversing) {
+      pendingReverse = false;
+      await reverseTranslate();
+    }
+  };
+
   const syncFromGoogle = () => {
     if (!hiddenLeaf || !hiddenLeaf.isConnected) return;
     const googleText = (hiddenLeaf.textContent || "").trim();
     if (googleText === lastSeenGoogleText) return;
     lastSeenGoogleText = googleText;
-    if (userIsEditingResult() || recentUserEdit()) return;
+    if (mirrorMode !== "google") return;
+    if (userIsEditingResult()) return;
     overlay.textContent = hiddenLeaf.textContent;
     lastTranslation = googleText;
-    lastUserText = null;
+  };
+
+  const hideStrays = () => {
+    for (const el of document.querySelectorAll("span.ryNqvb")) {
+      if (isOurNode(el)) continue;
+      const text = (el.textContent || "").trim();
+      if (!text) continue;
+      if (el !== hiddenLeaf && text !== lastSeenGoogleText) {
+        hiddenLeaf = el;
+        lastSeenGoogleText = text;
+        if (mirrorMode === "google" && !userIsEditingResult()) {
+          overlay.textContent = el.textContent;
+          lastTranslation = text;
+        }
+      }
+      if (el.style.display !== "none") el.style.display = "none";
+    }
+  };
+
+  const seedOverlay = (leaf) => {
+    const googleText = (leaf.textContent || "").trim();
+    lastSeenGoogleText = googleText;
+    hiddenLeaf = leaf;
+    if (mirrorMode === "user" && lastUserText !== null) {
+      overlay.textContent = lastUserText;
+      lastTranslation = lastUserText;
+    } else {
+      overlay.textContent = leaf.textContent;
+      lastTranslation = googleText;
+      lastUserText = null;
+    }
   };
 
   const hideAndAttach = (leaf) => {
@@ -361,29 +419,31 @@
     }
 
     leaf.style.display = "none";
-    hiddenLeaf = leaf;
     container.insertBefore(overlay, leaf);
-
-    const googleText = (leaf.textContent || "").trim();
-    lastSeenGoogleText = googleText;
-    if (recentUserEdit() && lastUserText !== null) {
-      overlay.textContent = lastUserText;
-      lastTranslation = lastUserText;
-    } else {
-      overlay.textContent = leaf.textContent;
-      lastTranslation = googleText;
-      lastUserText = null;
-    }
+    seedOverlay(leaf);
   };
 
   const ensureOverlay = () => {
+    const source = findSource();
+    if (
+      source &&
+      mirrorMode === "user" &&
+      source.value.trim() === "" &&
+      overlay &&
+      (overlay.textContent || "").trim() !== ""
+    ) {
+      mirrorMode = "google";
+    }
+
     if (overlay && overlay.isConnected && hiddenLeaf && hiddenLeaf.isConnected) {
       syncFromGoogle();
+      hideStrays();
       return;
     }
     const leaf = findVisibleLeaf();
     if (!leaf) return;
     hideAndAttach(leaf);
+    hideStrays();
   };
 
   let rescanScheduled = false;
