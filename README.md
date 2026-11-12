@@ -23,10 +23,3 @@ A Violentmonkey/Tampermonkey userscript that makes the result field on [translat
      - your userscript manager will offer to install it, or
    - **Manually:** open the manager's dashboard → create new script → paste the contents of `google-translate-both-sides.user.js` → save.
 4. Open or reload [translate.google.com](https://translate.google.com).
-
-## Notes & limits
-
-- Google changes the page's obfuscated CSS class names from time to time. The script tries several selectors (aria-labels first, class-name hooks as fallback). If editing ever stops working after a Google redesign, update `SOURCE_SELECTORS` / `RESULT_SELECTORS` / `SWAP_SELECTORS` at the top of the script.
-- If Google rebuilds the result area from scratch, the script rebuilds its overlay too - preserving what you were typing if you edited it within the last few seconds.
-- The back-translation uses Google's public `translate_a/single` endpoint; no keys, no other network access, nothing stored.
-- The old Firefox WebExtension version was removed in the pivot to a userscript; if you ever want it back, it's in the git history (commits before `8220bad`).
